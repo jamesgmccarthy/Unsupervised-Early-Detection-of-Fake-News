@@ -1,0 +1,17 @@
+pandas
+joblib
+sklearn
+nltk
+numpy
+gensim
+statsmodels
+textstat
+plotly
+tensorflow
+keras
+coclust
+wordcloud
+matplotlib
+pyreadr
+spacy
+testfixtures

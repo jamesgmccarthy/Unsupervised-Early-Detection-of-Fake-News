@@ -1,0 +1,11 @@
+*.zip
+venv
+*.docx
+*.pdf
+*.ipynb
+Data
+Dataset
+result
+bias-lexicon
+__pycache__
+*.json
