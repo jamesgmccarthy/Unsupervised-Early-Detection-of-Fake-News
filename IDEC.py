@@ -26,8 +26,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
-from TopicClustering import get_embeddings, create_tf_idf, get_median_pmi, get_most_common_words, word_count_of_corpus, \
-    word_count_dict, bigram_count_dict
+
 from keras.preprocessing import text
 
 
@@ -334,89 +333,6 @@ def classifier(X):
     return model
 
 
-def get_pmi_score(data, labels, num_words, word_type='stemmed_text'):
-    """Calculate aggregate PMI score
-
-    Arguments:
-        data {Pandas DataFrame} -- DataFrame containing articles
-        labels {NumPy Array} -- Cluster Assignments
-        num_words {int} -- Number of words to calculate PMI score of
-        word_type {string} -- Which word type to choose from dataframe i.e. stemmed_text/lemmatized_text
-
-    Returns:
-        agg_pmi - aggregate pmi score is the weighted mean of the median pmi score for each cluster in labels
-    """
-    data, wcd = word_count_dict(data, word_type)
-    data, bigram_cd = bigram_count_dict(data, word_type)
-    total_word_count = word_count_of_corpus(data, word_type)
-    median_pmi_scores = {}
-    agg_pmi = 0
-    for label in np.unique(labels):
-        common_words = get_most_common_words(
-            data, label, num_words=num_words, text_type=word_type)
-        if common_words is None:
-            pass
-        median_pmi_scores[label] = (get_median_pmi(list(common_words), wcd, bigram_cd, total_word_count),
-                                    len(data[data['cluster'] == label]))
-    for cluster, values in median_pmi_scores.items():
-        if values[0] == float('-inf'):
-            agg_pmi += 0
-        else:
-            agg_pmi += (values[0] * (values[1] / len(data)))
-    return agg_pmi
-
-
-def calculate_topic_metrics(data, df, y, num_words, num_topics, word_type, dataset):
-    """Run topic clustering experiment and return metrics, cluster assignments and dataframe
-
-    Arguments:
-        data {Numpy Array} -- Array of embeddings
-        df {Pandas DataFrame} -- DataFrame of data which experiment is being run on
-        y {Numpy Array} -- Cluster Assignments
-        num_words {int} -- Number of words to calculate PMI scores for
-        num_topics {int} -- Numbers of topics to search for, i.e. number of clusters to assign data to
-        word_type {str} -- Which word type to choose from dataframe i.e. stemmed_words/lemmatized_words
-        dataset {[type]} -- [description]
-
-    Returns:
-        [type] -- [description]
-    """
-    batch_size = data.shape[0] // 10
-    pretrain_epochs = 100
-    optimizer = 'adam'
-    update_interval = 100
-    save_dir = f'./results/idec/TopicClustering/{dataset}/'
-    idec = IDEC(dims=[data.shape[-1], 500, 500,
-                      2000, 10], n_clusters=num_topics)
-    t0 = time()
-
-    # Greedy layerwise pretraining of autoencoder - Only Reconstruction
-    idec.pretrain(data,
-                  batch_size=batch_size, layerwise_pretrain_iters=5000, finetune_iters=10000, exp='topic')
-
-    # Initialise IDEC Model
-    idec.compile(loss=['kld', 'mse'], loss_weights=[
-                 0.1, 1], optimizer=optimizer)
-    idec.fit(data, y=y, method='kmeans', batch_size=batch_size, tol=0.0001, maxiter=1000,
-             update_interval=update_interval, ae_weights=None, save_dir=save_dir)
-
-    # Predict Input, extract embedded feature representation
-    features = idec.extract_feature(data)
-
-    # Calculate internal metrics
-    dbs = metrics.cluster.davies_bouldin_score(
-        features, idec.y_pred)
-    sil = metrics.cluster.silhouette_score(
-        features, idec.y_pred)
-
-    labels = idec.y_pred
-    df['cluster'] = labels
-
-    # Calculate PMI Score
-    pmi = get_pmi_score(df, labels, num_words=num_words, word_type=word_type)
-    return dbs, sil, pmi, labels, df
-
-
 def create_word_embeddings(data, max_len, max_num_words, embedding_size):
     """Return array of word embeddings of input data, data, to a given maximum length, max_len,
     pad with zeros if too small
@@ -533,149 +449,34 @@ def create_glove_embedding(embedding_dim, max_num_words, tokenizer, max_seq_leng
                             name='embedding_layer')
 
 
-def load_topic_data(dataset):
-    if dataset == 'all':
-        politifact = joblib.load(
-            './Data/Preprocessed/politifact_clustering_large.h5')
-        gossipcop = joblib.load(
-            './Data/Preprocessed/gossipcop_clustering_large.h5')
-        data = pd.DataFrame()
-        for df in [politifact, gossipcop]:
-            data = data.append(df)
-    elif dataset == 'gossipcop':
-        gossipcop = joblib.load(
-            './Data/Preprocessed/gossipcop_clustering_large.h5')
-        data = gossipcop
-    else:
-        politifact = joblib.load(
-            './Data/Preprocessed/politifact_clustering_large.h5')
-        data = pd.DataFrame()
-        for df in [politifact, gossipcop]:
-            data = data.append(df)
-
-    return data
-
-
-def run_topic_exp(dataset):
-    """Run full topic experiment, following steps:
-
-    - Load data
-    - Create storage file for metrics
-    - Loop through each partition
-        - Load doc2vec embeddings
-        - Create tf-idf vectors
-        - Loop through each representation (embeddings/tf-idf)
-            - Train idec model on representation
-            - Calculate metrics
-            - Save cluster assignments
-            - Write results to metric file
-
-    Arguments:
-        dataset {str} -- The dataset to run experiment on (politifact or gossipcop)
-    """
-    print("loading Data")
-    data = load_topic_data(dataset)
-    metric_dict = {}  # Store all metrics to print out in terminal
-
-    # Create file to record all the metrics
-    if not os.path.isfile('./results/idec/TopicClustering/CSV/'):
-        os.makedirs('./results/idec/TopicClustering/CSV/')
-    metric_results_file = open(
-        f'./results/idec/TopicClustering/CSV/{dataset}_clustering_scores.csv', 'a')
-    logwriter = csv.DictWriter(metric_results_file,
-                               fieldnames=['representation', 'number_of_topics', 'Davies_Bouldin_Score',
-                                           'Silhouette_Score', 'PMI'])
-    logwriter.writeheader()
-
-    # Loop through each topic partition
-    for num in [5, 10, 15]:
-        num_topics = num
-        num_words = 10
-        word_type = 'stemmed_text'
-
-        # Create doc2vec embeddings
-        print('Loading Doc2vec model now')
-        doc2vec = Doc2Vec.load(
-            './SavedModels/saved_doc2vec_eval_model_clustering')
-        embeddings = get_embeddings(data, doc2vec)
-
-        # Create tf-idf embeddings
-        print("Creating tf-idf Representations")
-        one_gram, bi_gram, tri_gram = create_tf_idf(
-            data, num_words=2000, word_type=word_type, force=True)
-        one_gram = one_gram.todense()
-        del bi_gram, tri_gram
-        representations_dict = {
-            'embeddings': embeddings, 'one_gram': one_gram}
-
-        # Loop through each representations, train idec on data and calculate metrics
-        for name, representations in representations_dict.items():
-            dbs, sil, pmi, labels, df = calculate_topic_metrics(data=representations, df=data, y=None,
-                                                                num_words=num_words, num_topics=num,
-                                                                word_type=word_type, dataset=dataset)
-            score_dict[f'Davies Bouldin Score {name} {num} '] = dbs
-            score_dict[f'Silhouette Score {name} {num}:'] = sil
-            score_dict[f'PMI Score {name} {num}:'] = pmi
-
-            # save cluster assignments of idec
-            joblib.dump(
-                df, f'./results/idec/TopicClustering/{dataset}_idec_labels_{name}_{num}.h5')
-
-            # Write results to metric file
-            logwriter.writerow(dict(representation=name, number_of_topics=num_topics, Davies_Bouldin_Score=dbs,
-                                    Silhouette_Score=sil, PMI=pmi))
-
-    print(metric_dict)
-
-
-def run_fnd_experiment(dataset='politifact', topics=False, under_sample=False):
-    print("loading Data")
-    if dataset == 'gossipcop' and topics is not True:
-        gossipcop = joblib.load(
-            './Data/Preprocessed/gossipcop_fnd_large.h5')
-        data = gossipcop
-        hcfs = joblib.load('./Data/HandCraftedFeatures/gossipcop.h5')
-
-    elif dataset == 'politifact' and topics is True:
-        df = joblib.load(
-            './results/politifact/TopicClustering/lda_topic_data_5.h5')
-        hcf = joblib.load('./Data/HandCraftedFeatures/politifact_large.h5')
-        dataset = 'topicsPolitifact'
-
-    elif dataset == 'gossipcop' and topics is True:
-        df = joblib.load(
-            './results/gossipcop/TopicClustering/lda_topic_data_5.h5')
-        hcf = joblib.load('./Data/HandCraftedFeatures/gossipcop.h5')
-        dataset = 'topicsGossipcop'
-
-    else:
-        politifact = joblib.load(
-            './Data/Preprocessed/politifact_fnd_large.h5')
-        gossipcop = joblib.load(
-            './Data/preprocessed/gossipcop_clustering_large.h5')
-        data = pd.DataFrame()
-        for df in [politifact, gossipcop]:
-            data = data.append(df)
-        hcfs = joblib.load('./Data/HandCraftedFeatures/politifact_large.h5')
-
-    # To control number of clusters idec model will be trained on, when 1 idec trained on full dataset
-    if dataset == 'topicsPolitifact' or dataset == 'topicsGossipcop':
-            topic_cluster_num = len(np.unique(df['cluster']))
-    else:
-        topic_cluster_num = 1
-
-    for i in range(0, topic_cluster_num):
-            if topic_cluster_num > 1:
-                data = df[df['cluster'] == i]
-                print("Running exp on cluster:", i)
-                hcfs = hcf[hcf['cluster'] == i]
-
-                
 def main(exp, dataset='politifact', topics=False, under_sample=False):
     if not os.path.exists('results'):
         os.makedirs('results')
 
     if exp == 'fnd':
+        if dataset == 'gossipcop' and topics is not True:
+            gossipcop = joblib.load(
+                './Data/Preprocessed/gossipcop_fnd_large.h5')
+            data = gossipcop
+
+        elif dataset == 'politifact' and topics is True:
+            df = joblib.load(
+                './results/politifact/TopicClustering/lda_topic_data_5.h5')
+            dataset = 'topicsPolitifact'
+
+        elif dataset == 'gossipcop' and topics is True:
+            df = joblib.load(
+                './results/gossipcop/TopicClustering/lda_topic_data_5.h5')
+            dataset = 'topicsGossipcop'
+
+        else:
+            politifact = joblib.load(
+                './Data/Preprocessed/politifact_fnd_large.h5')
+            gossipcop = joblib.load(
+                './Data/preprocessed/gossipcop_clustering_large.h5')
+            data = pd.DataFrame()
+            for df in [politifact, gossipcop]:
+                data = data.append(df)
 
         """
         Clustering Experiment
@@ -689,7 +490,6 @@ def main(exp, dataset='politifact', topics=False, under_sample=False):
             if topic_cluster_num > 1:
                 data = df[df['cluster'] == i]
                 print("Running exp on cluster:", i)
-                hcfs = hcf[hcf['cluster'] == i]
             # Doc2vec data
             doc2vec = Doc2Vec.load(
                 './SavedModels/saved_doc2vec_eval_model_fnd')
@@ -710,114 +510,36 @@ def main(exp, dataset='politifact', topics=False, under_sample=False):
 
             print(x.shape)
             y = data['label'].values
-            # word_embeddings= create_word_embeddings(data,1000,150000,300)
-            # print(word_embeddings.shape)
-            # HandCrafted Features
-            y_hcf = hcfs['label'].values
-            hcfs.drop('label', axis=1, inplace=True)
-            hcfs = hcfs.values
-            hcfs = normalize(hcfs)
-            kmeans = KMeans(n_clusters=2, n_init=20)
-            hcf_y_pred = kmeans.fit_predict(hcfs)
-            acc = cluster_acc(y_hcf, hcf_y_pred)
-            nmi = metrics.normalized_mutual_info_score(
-                y_hcf, hcf_y_pred, average_method='arithmetic')
-            print('nmi:', nmi)
-            adj = metrics.adjusted_rand_score(y_hcf, hcf_y_pred)
-            print('ARI:', adj)
-            if y is not None:
-                if under_sample == True:
-                    fake_news_results_file = open(
-                        f'./results/FakeNews/CSV/{dataset}_Undersampled_FN_Detection_doc2vec.csv', 'a')
-                elif under_sample == False:
-                    fake_news_results_file = open(
-                        f'./results/FakeNews/CSV/{dataset}FN_Detection_doc2vec.csv', 'a')
-                logwriter = csv.DictWriter(fake_news_results_file,
-                                           fieldnames=['Method', 'ClusteringACC', 'NMI', 'ADJ'])
-                logwriter.writeheader()
-            # Writing HCF results
-            logwriter.writerow(
-                dict(Method='KMeans HCF', ClusteringACC=acc, NMI=nmi, ADJ=adj))
-
-            print('Fitting kmeans to doc2vec')
-            kmeans = KMeans(n_clusters=2, n_init=20)
-            # dist = 1-cosine_similarity(x)
-            y_pred = kmeans.fit_predict(x)
-            acc = cluster_acc(y, y_pred)
-            print('Clustering Acc:', acc)
-            nmi = metrics.normalized_mutual_info_score(
-                y, y_pred, average_method='arithmetic')
-            print('nmi:', nmi)
-            adj = metrics.adjusted_rand_score(y, y_pred)
-            print('ARI:', adj)
-            logwriter.writerow(dict(Method='KMeans Doc2vec',
-                                    ClusteringACC=acc, NMI=nmi, ADJ=adj))
-            tn, fp, fn, tp = metrics.confusion_matrix(y, y_pred).ravel()
-            print('True Neg:', tn)
-            print("False Positive:", fp)
-            print('False Negative:', fn)
-            print("True Positive:", tp)
-            f1 = metrics.classification.f1_score(y, y_pred)
-            acc = metrics.accuracy_score(y, y_pred)
-            recall_s = metrics.recall_score(y, y_pred)
-            precision_s = metrics.precision_score(y, y_pred)
-            print("Original Score for doc2vec vectors")
-            print('f1_score:', f1, 'accuracy:',
-                  acc, 'recall:', recall_s, 'precision_s', precision_s)
 
             # Run IDEC Experiment
+            # Set parameters
             batch_size = 256
             pretrain_epochs = 200
             optimizer = 'adam'
-            update_interval = 140
-            save_interval = 10
-            save_dir = f'./results/idec/{dataset}_{exp}_dDoc2vec'
+            update_interval = 140 # update cluster assignments after training iterations
+            save_interval = 10 # interval to save model weights 
+            save_dir = f'./results/idec/{dataset}_{exp}_Doc2vec'
             n_clusters = 2
 
+            # Initialise model
             idec = IDEC(dims=[x.shape[-1], 500, 500, 2000, 10],
                         n_clusters=n_clusters, dataset=dataset)
             print("Running IDEC Experiment")
+
+            # pre-training model, only reconstruction
             idec.pretrain(x, layerwise_pretrain_iters=50000,
                           finetune_iters=100000, batch_size=batch_size, exp='fnd')
             plot_model(idec.model, to_file='idec_model.png', show_shapes=True)
-            idec.autoencoder.summary()
-            idec.model.summary()
+
+            # Compile idec model, reconstruction and clustering
             idec.compile(loss=['kld', 'mse'], loss_weights=[
                 1, 0.1], optimizer=optimizer)
             idec.fit(x, y=y, method='kmeans', batch_size=batch_size, tol=0.0001, maxiter=100000,
                      update_interval=update_interval,
                      ae_weights=None, save_dir=save_dir, cluster=i, under_sample=under_sample)
-            extracted_x = idec.extract_feature(x)
-            kmeans = KMeans(n_clusters=2, n_init=20)
-            y_pred_extracted = kmeans.fit_predict(extracted_x)
-            acc = cluster_acc(y, y_pred_extracted)
-            nmi = metrics.normalized_mutual_info_score(
-                y, y_pred_extracted, average_method='arithmetic')
-            adj = metrics.adjusted_rand_score(y, y_pred_extracted)
-            print(f'Extracted acc: {acc}, nmi: {nmi}, adj={adj}')
-            logwriter.writerow(
-                dict(Method='KMeans Extracted Features', ClusteringACC=acc, NMI=nmi, ADJ=adj))
+
             """
-            print("Running IDEC Experiment with tf-idf features")
-            tf_vect = TfidfVectorizer(tokenizer=lambda x: word_tokenize(x), max_df=0.8, min_df=0.05, ngram_range=(1, 3),
-                                  max_features=50000)
-            tf_idf = tf_vect.fit_transform(data['text'])
-            tf_idf = tf_idf.todense()
-            idec_tfidf = IDEC(dims=[tf_idf.shape[-1], 500, 500, 2000, 10],n_clusters=n_clusters,dataset=dataset)
-            idec_tfidf.pretrain(tf_idf,layerwise_pretrain_iters=5000,finetune_iters=10000, batch_size=batch_size,exp='fnd')
-            idec_tfidf.compile(loss=['kld','mse'],loss_weights=[0.1,1],optimizer=optimizer)
-            idec_tfidf.fit(tf_idf, y=y, method='kmeans', batch_size=batch_size, tol=0.0001, maxiter=100000,
-                    update_interval=update_interval,
-                    ae_weights=None, save_dir=save_dir,cluster=i,under_sample= under_sample)
-            tf_idf_extracted_x = idec_tfidf.extract_feature(tf_idf)
-            kmeans = KMeans(n_clusters = 2,n_init=20)
-            y_pred_extracted_tfidf = kmeans.fit_predict(tf_idf_extracted_x)
-            acc = cluster_acc(y,y_pred_extracted_tfidf)
-            nmi =metrics.normalized_mutual_info_score(y,y_pred_extracted_tfidf,average_method='arithmetic')
-            adj=metrics.adjusted_rand_score(y,y_pred_extracted_tfidf)
-            print(f'Extracted acc: {acc}, nmi: {nmi}, adj={adj}')
-            logwriter.writerow(dict(Method= 'KMeans Extracted Features TFIDF', ClusteringACC=acc,NMI=nmi,ADJ=adj))
-        
+            Classifiaction experiment to investigate the doc2vec vectors performance in a supervised setting
             """
 
             if y is not None:
@@ -825,21 +547,35 @@ def main(exp, dataset='politifact', topics=False, under_sample=False):
                 fake_news_results_file_classification = open(
                     './results/FakeNews/CSV/FN_Detection_doc2vec_classification', 'a')
 
-                logwriter_cf = csv.DictWriter(fake_news_results_file,
+                logwriter_cf = csv.DictWriter(fake_news_results_file_classification,
                                               fieldnames=['Method', 'ACC', 'F1', 'Recall', 'Precision'])
                 logwriter_cf.writeheader()
+
+                # Convert y to categorical varaibles and split data into train and test
                 y_split = keras.utils.to_categorical(y)
                 X_train, X_test, y_train, y_test = train_test_split(
                     x, y_split, test_size=0.25, random_state=0)
+
+                # Initialise classifier
                 cf = classifier(X_train)
+
+                # Early stoper to watch validation loss and restore best weights if minimum change not met
                 early_stopper = keras.callbacks.EarlyStopping(monitor='val_loss',
                                                               min_delta=0.01, patience=10,
                                                               restore_best_weights=True)
+
+                # Fit classifier to training data
                 cf.fit(X_train, y_train, batch_size=256, epochs=100,
                        validation_split=0.1, callbacks=[early_stopper])
+
+                # predict labels of test set
                 y_pred = cf.predict(X_test)
+
+                # Convert back to binary variable
                 y_pred = y_pred.argmax(1)
                 y_test = y_test.argmax(1)
+
+                # Calculate metrics
                 acc_score = metrics.accuracy_score(y_test, y_pred)
                 f1 = metrics.f1_score(y_test, y_pred)
                 recall_s = metrics.recall_score(y_test, y_pred)
@@ -850,64 +586,6 @@ def main(exp, dataset='politifact', topics=False, under_sample=False):
                 print("Precision of cf:", precision_s)
                 logwriter_cf.writerow(dict(
                     Method='Classification Full', ACC=acc_score, F1=f1, Recall=recall_s, Precision=precision_s))
-                print("Testing idec.y_pred")
-                """
-                tn, fp, fn, tp = metrics.confusion_matrix(y, idec.y_pred).ravel()
-
-                print("learned tn:", tn)
-                print("learned fp:", fp)
-                print("learned fn:", fn)
-                print("learned tp:", tp)
-                f1 = metrics.classification.f1_score(y, idec.y_pred)
-                acc_score = metrics.accuracy_score(y, idec.y_pred)
-                recall_s = metrics.recall_score(y, idec.y_pred)
-                precision_s = metrics.precision_score(y, idec.y_pred)
-                print('f1_score:', f1, 'accuracy:',
-                    acc_score, 'recall:', recall_s, 'precision_s', precision_s)
-                logwriter_cf.writerow(
-                    dict(Method='Clustering_clss', ACC=acc_score,F1=f1,Recall=recall_s,Precision=precision_s))
-                print("Testing encoder_predictions")
-                X_features = idec.extract_feature(x)
-                kmeans = KMeans(n_clusters=2, n_init=20)
-                y_pred = kmeans.fit_predict(X_features)
-                tn, fp, fn, tp = metrics.confusion_matrix(y, y_pred).ravel()
-                print("test tn:", tn)
-                print('test fp:', fp)
-                print('test fn:', fn)
-                print('test tp:', tp)
-                f1 = metrics.classification.f1_score(y, y_pred)
-                acc = metrics.accuracy_score(y, y_pred)
-                recall_s = metrics.recall_score(y, y_pred)
-                precision_s = metrics.precision_score(y, y_pred)
-                print('f1_score:', f1, 'accuracy:',
-                    acc, 'recall:', recall_s, 'precision_s', precision_s)
-                logwriter_cf.writerow(
-                    dict(Method='KMeans of features', ACC=acc_score,F1=f1,Recall=recall_s,Precision=precision_s))
-                print("now testing idec features on classifier")
-                X_train_idec_features = idec.extract_feature(X_train)
-                X_test_idec_features = idec.extract_feature(X_test)
-                idec_classifier = classifier(X_train_idec_features)
-                idec_classifier.fit(X_train_idec_features, y_train, batch_size=256, epochs=100, validation_split=0.1,
-                                    callbacks=[early_stopper])
-
-                y_idec_pred = idec_classifier.predict(X_test_idec_features)
-                y_idec_pred = y_idec_pred.argmax(1)
-                tn, fp, fn, tp = metrics.confusion_matrix(
-                    y_test, y_idec_pred).ravel()
-                print("test tn:", tn)
-                print('test fp:', fp)
-                print('test fn:', fn)
-                print('test tp:', tp)
-                f1 = metrics.classification.f1_score(y_test, y_idec_pred)
-                acc = metrics.accuracy_score(y_test, y_idec_pred)
-                recall_s = metrics.recall_score(y_test, y_idec_pred)
-                precision_s = metrics.precision_score(y_test, y_idec_pred)
-                print('f1_score:', f1, 'accuracy:',
-                    acc, 'recall:', recall_s, 'precision_s', precision_s)
-                logwriter_cf.writerow(
-                    dict(Method='Classifier_idec_features', ACC=acc_score,F1=f1,Recall=recall_s,Precision=precision_s))
-
-                """
 
 
 if __name__ == '__main__':

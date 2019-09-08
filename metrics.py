@@ -68,7 +68,7 @@ def predict_labels(x, idec):
 
 
 def eval_labels(x, y, labels):
-    #acc = cluster_acc(y, labels)
+    # acc = cluster_acc(y, labels)
     acc = external.accuracy(y, labels)
     nmi = metrics.adjusted_mutual_info_score(
         y, labels, average_method='geometric')
@@ -168,13 +168,15 @@ def main(under_sample=False):
             split_file = open(
                 f'./results/FakeNews/Metrics/under_sample_{name}_split.csv', 'a')
             split_logwrite = csv.DictWriter(split_file, fieldnames=[
-                'Dataset', 'Cluster', 'Cluster_len', 'Fake_Articles', 'ClusteringAcc', 'NMI', 'ARI', 'FM', 'Silhouette', 'Davies_Bouldin'])
+                'Dataset', 'Cluster', 'Cluster_len', 'Fake_Articles', 'ClusteringAcc', 'NMI', 'ARI', 'FM', 'Silhouette',
+                'Davies_Bouldin'])
         elif under_sample == False:
             split_file = open(
                 f'./results/FakeNews/Metrics/{name}_split.csv', 'a')
-            split_logwrite = csv.DictWriter(split_file, fieldnames=[
-                'Dataset', 'Cluster', 'Cluster_len', 'Fake_Articles', 'ClusteringAcc', 'NMI', 'ARI', 'FM', 'Silhouette', 'Davies_Bouldin'])
-        split_logwrite.writeheader()
+            split_logwriter = csv.DictWriter(split_file, fieldnames=[
+                'Dataset', 'Cluster', 'Cluster_len', 'Fake_Articles', 'ClusteringAcc', 'NMI', 'ARI', 'FM', 'Silhouette',
+                'Davies_Bouldin'])
+        split_logwriter.writeheader()
         for i in range(0, len(np.unique(df['cluster']))):
             if under_sample is True:
                 # 1 indicates fake news
@@ -191,6 +193,7 @@ def main(under_sample=False):
             elif under_sample is False:
                 # Create doc2vec embeddings
                 x, y = load_embeddings(df[df['cluster'] == i])
+
             # IDEC feature test
             idec = create_model(x, dataset=name, topics=True,
                                 cluster=i, under_sample=under_sample)
@@ -198,14 +201,16 @@ def main(under_sample=False):
             acc, nmi, adj, sil, db, fm = eval_labels(features, y, y_pred)
             fk = len(df[(df['label'] == 1) & (df['cluster'] == i)])
             print(fk)
-            split_logwrite.writerow(dict(Dataset='Extracted', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
-                                         NMI=nmi, ARI=adj, FM=fm, Silhouette=sil, Davies_Bouldin=db))
+            split_logwriter.writerow(
+                dict(Dataset='Extracted', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
+                     NMI=nmi, ARI=adj, FM=fm, Silhouette=sil, Davies_Bouldin=db))
             # Doc2vec test
             kmeans = KMeans(n_clusters=2, n_init=20, init='random')
             y_pred = kmeans.fit_predict(x)
             acc, nmi, adj, sil, db, fm = eval_labels(x, y, y_pred)
-            split_logwrite.writerow(dict(Dataset='Doc2vec', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
-                                         NMI=nmi, ARI=adj, FM=fm, Silhouette=sil, Davies_Bouldin=db))
+            split_logwriter.writerow(
+                dict(Dataset='Doc2vec', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
+                     NMI=nmi, ARI=adj, FM=fm, Silhouette=sil, Davies_Bouldin=db))
 
             # HCF test
             hcf = hcf_topic[hcf_topic['cluster'] == i]
@@ -214,8 +219,10 @@ def main(under_sample=False):
             kmeans = KMeans(n_clusters=2, n_init=20, init='random')
             y_pred = kmeans.fit_predict(hcf)
             acc, nmi, adj, sil, db, fm = eval_labels(hcf, y_hcf, y_pred)
-            split_logwrite.writerow(dict(Dataset='HCF', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
-                                         NMI=nmi, ARI=adj, Silhouette=sil, Davies_Bouldin=db))
+            split_logwriter.writerow(
+                dict(Dataset='HCF', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
+                     NMI=nmi, ARI=adj, Silhouette=sil, Davies_Bouldin=db))
 
-if __name__=='__main__':
+
+if __name__ == '__main__':
     main(under_sample=True)

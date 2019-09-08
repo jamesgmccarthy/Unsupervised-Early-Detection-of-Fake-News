@@ -12,6 +12,7 @@ import spacy
 from spacy.matcher import PhraseMatcher
 import os
 
+
 def load_dataset(path):
     return joblib.load(path)
 
@@ -139,16 +140,17 @@ def clean_url(url):
 
 
 def remove_two_labeled(data):
-    """A number of steps are taken to remove noise from the data
-    """
     df = data[['text', 'label']]
     d = {}
+
     # create dict with text as key, list of labels and indices as value
     for row in df.itertuples():
         d[(row[1])] = d.get((row[1]), []) + [row[2], row[0]]
+
     # recreate dict including only articles with two labels (real and fake), exclude labels in new value
     d = {key: sorted(list(set(value)))[2:]
          for key, value in d.items() if (0 in value) & (1 in value)}
+
     drop_array = []
     for values in d.values():
         for value in values:
@@ -223,8 +225,7 @@ def main(sizes: list, type_: string):
 
             print("Remvoing Stop words")
             data = remove_stop_words(data)
-        
-        
+
             # split data into two different providers
             print("Splitting into providers")
             providers = pd.unique(data['provider']).tolist()

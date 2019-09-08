@@ -1,7 +1,7 @@
-'''Code implementing part of Semantics-level features proposed by 
+"""Code implementing part of Semantics-level features proposed by 
     Zhou, X., Jain, A., Phoha, V. V., & Zafarani, R. (2019, April). Fake News Early Detection:
     A Theory-driven Model. arXiv:1904.11679 [cs]. Retrieved 2019-06-25, from http://arxiv.org/abs/1904.11679 
-'''
+"""
 import csv
 import joblib
 import pandas as pd
@@ -327,12 +327,6 @@ def main(force=False):
                 './Data/HandCraftedFeatures/politifact_large.h5')
     joblib.dump(output_files[1], './Data/HandCraftedFeatures/gossipcop.h5')
 
-    """joblib.dump(output_files[2], './Data/HandCraftedFeatures/BuzzFeed.h5')
-    joblib.dump(output_files[3],
-                './Data/HandCraftedFeatures/politifact_small.h5')"""
 
-
-
-
-
-main()
+if __name__ == '__main__':
+    main()
