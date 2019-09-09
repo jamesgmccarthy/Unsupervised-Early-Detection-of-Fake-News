@@ -186,3 +186,7 @@ def main(dataset):
                                     Silhouette_Score=sil, PMI=pmi))
 
     print(metric_dict)
+
+
+if __name__ == '__main__':
+    main()

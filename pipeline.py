@@ -6,13 +6,15 @@ import preprocessing
 import CreateEmbeddings
 import TopicClustering
 import IDEC
+import CreateHandCraftedFeatures
+import idec_topic_detection
 
 
-def main(create_data=True, preprocess=True, create_embeddings=True, topic_clustering=True, fnd=True, under_sampled_fnd=False, topic_fnd=True):
+def main(create_data=True, preprocess=True, create_embeddings=True, handcrafted_features=False, topic_clustering=True, fnd=True, under_sampled_fnd=False, topic_fnd=True):
     if create_data is True:
         createDatasets.main()
     if preprocess is True:
-        sizes = ['large','small']
+        sizes = ['large', 'small']
         preprocessing.main(sizes, 'clustering')
         preprocessing.main(sizes, 'fnd')
     if create_embeddings is True:
@@ -20,11 +22,15 @@ def main(create_data=True, preprocess=True, create_embeddings=True, topic_cluste
         CreateEmbeddings.main(retrain_model=True, dataset='clustering')
         print("Creating Embeddings for Fake News Detection")
         CreateEmbeddings.main(retrain_model=True, dataset='fnd')
+    if hancrafted_feature_set is True:
+        print("Creating Handcrafted Feature Set")
+        CreateHandCraftedFeatures.main(force=True, dataset='politifact')
+        CreateHandCraftedFeatures.main(force=True, dataset='gossipcop')
     if topic_clustering is True:
         TopicClustering.main(force=True, dataset='politifact')
-        IDEC.main(exp='topic', dataset='politifact')
+        idec_topic_detection.main('politifact')
         TopicClustering.main(force=True, dataset='gossipcop')
-        IDEC.main(exp='topic', dataset='gossipcop')
+        idec_topic_detection.main('gossipcop')
     if fnd is True:
         IDEC.main(exp='fnd', dataset='politifact')
         IDEC.main(exp='fnd', dataset='gossipcop')
@@ -48,4 +54,4 @@ def main(create_data=True, preprocess=True, create_embeddings=True, topic_cluste
 
 if __name__ == '__main__':
     main(create_data=True, preprocess=True,
-         create_embeddings=True, topic_clustering=True, fnd=True, topic_fnd=True, under_sampled_fnd=True)
+         create_embeddings=True,  handcrafted_features=False, topic_clustering=True, fnd=True, topic_fnd=True, under_sampled_fnd=True)

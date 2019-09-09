@@ -97,11 +97,12 @@ def main(under_sample=False):
         os.makedirs('./results/FakeNews/Metrics')
     datasets = {'gossipcop': gossipcop}
     for name, df in datasets.items():
+        """
         if name == 'gossipcop':
             hcf = joblib.load('./Data/HandCraftedFeatures/gossipcop.h5')
         elif name == 'politifact':
             hcf = joblib.load('./Data/HandCraftedFeatures/politifact_large.h5')
-
+        """
         # undersample data if true
         if under_sample is True:
             # 1 indicates fake news
@@ -143,7 +144,7 @@ def main(under_sample=False):
         acc, nmi, adj, sil, db, fm = eval_labels(x, y, y_pred)
         full_logwrite.writerow(dict(Dataset='Doc2vec', ClusteringAcc=acc,
                                     NMI=nmi, ARI=adj, FM=fm, Silhouette=sil, Davies_Bouldin=db))
-
+        """
         # HCF Test
         if under_sample is True:
             # 1 indicates fake news
@@ -162,7 +163,7 @@ def main(under_sample=False):
         acc, nmi, adj, sil, db, fm = eval_labels(hcf, y, y_pred)
         full_logwrite.writerow(dict(Dataset='HCF', ClusteringAcc=acc,
                                     NMI=nmi, ARI=adj, FM=fm, Silhouette=sil, Davies_Bouldin=db))
-
+        """
         # Create split csv
         if under_sample == True:
             split_file = open(
@@ -211,7 +212,7 @@ def main(under_sample=False):
             split_logwriter.writerow(
                 dict(Dataset='Doc2vec', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
                      NMI=nmi, ARI=adj, FM=fm, Silhouette=sil, Davies_Bouldin=db))
-
+            """
             # HCF test
             hcf = hcf_topic[hcf_topic['cluster'] == i]
             y_hcf = hcf['label'].values
@@ -222,6 +223,7 @@ def main(under_sample=False):
             split_logwriter.writerow(
                 dict(Dataset='HCF', Cluster=i, Cluster_len=len(x), Fake_Articles=fk, ClusteringAcc=acc,
                      NMI=nmi, ARI=adj, Silhouette=sil, Davies_Bouldin=db))
+            """
 
 
 if __name__ == '__main__':
