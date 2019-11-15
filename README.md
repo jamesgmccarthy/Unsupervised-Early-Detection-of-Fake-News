@@ -1,4 +1,4 @@
-# Unsupervised-Early-Fake-News-Detection
+# Unsupervised-Early-Detection-of-Fake-News
 This is a code repository for my thesis project aimed at distinguishing fake news articles from real news articles in an unsupervised early detection approach using clustering techniques. A secondary aim of my thesis was to investigate whether or not clustering the news articles in dataset into their respective topics and then fitting the clustering models on the each topic cluster would improve the overall clustering performance of the models. This was done because it was believed that articles written about Donald Trump for example would have different linguistic styles and semantic features than articles written about healthcare.
 
 ## Getting Started
